@@ -8,7 +8,11 @@ This module exports the Ranges class and the BadRange exception."""
 # Since we still have Red Hat 7.3 machines (at least for a bit longer...)
 from __future__ import generators
 
+__all__ = ['BadRange', 'Ranges']
+
 class BadRange(Exception):
+	"""Raised if there is some problem with ranges.
+	(Yes, this is non-specific.)"""
 	pass
 
 class Ranges:
@@ -153,6 +157,7 @@ class Ranges:
 		"""Remove a list of [start,end] ranges from the set."""
 		for s,e in l:
 			self.delrange(s, e)
+
 	# NOTE: these use internal implementation details. You lose if
 	# you pass bogus objects to them.
 	def addRanges(self, rng):
@@ -168,15 +173,12 @@ class Ranges:
 	# this.
 	def __contains__(self, val):
 		"""Is VAL a point in the set of ranges?"""
-		# Despite what pychecker thinks, we do SO have returns
-		# on all paths out of here. It is just TOO STUPID to
-		# see that for some reason.
-		__pychecker__ = 'no-implicitreturns'
 		if len(self._l) <= 4:
 			for r in self._l:
 				if r[0] <= val <= r[1]:
 					return 1
 			return 0
+
 		# It's worth using binary search now.
 		p = self._find(val)
 		pm = p-1
@@ -188,10 +190,12 @@ class Ranges:
 			 (self._l[p][0] <= val <= self._l[p][1])) \
 			or (pm >= 0 and \
 			    (self._l[pm][0] <= val <= self._l[pm][1])))
+		return 0
 
 	# This is a hideously inefficient implementation. Don't use it
 	# unless you have to!
 	def copy(self):
+		"""Return a new object that is a copy of this set of ranges."""
 		n = self.__class__()
 		for s,e in self._l:
 			n._l.append([s,e])
@@ -217,6 +221,7 @@ class Ranges:
 
 	# Is other a subset of us?
 	def subset(self, other):
+		"""Return True if other is a subset of this set of ranges."""
 		i = 0; myl = self._l
 		j = 0; otl = other._l
 		while i < len(myl) and j < len(otl):
@@ -234,6 +239,7 @@ class Ranges:
 		return j == len(otl)
 	# Does other have elements in common with us?
 	def intersect(self, other):
+		"""Returns True if another set of ranges intersects us."""
 		def _overlap(t1, t2):
 			low1, hi1 = t1
 			low2, hi2 = t2
@@ -254,8 +260,9 @@ class Ranges:
 			else:
 				j += 1
 		return 0
-	# Are we adjacent to another range?
+
 	def adjacent(self, other):
+		"""Return True if we are adjacent to another range."""
 		if len(self._l) == 0 or len(other._l) == 0:
 			return 0
 		return (self._l[-1][1]+1 == other._l[0][0]) or \
@@ -265,6 +272,8 @@ class Ranges:
 	# elements it contains, ie len(tuple(range)) without actually,
 	# like, generating that number.
 	def len(self):
+		"""The length of a set of ranges is the number of elements
+		that it	contains."""
 		return reduce(lambda x, y: x+y[1]-y[0]+1, self._l, 0)
 	# If we are actually storing longs (such as, say, IP addresses),
 	# our length can exceed sys.maxint and in any case can be turned
@@ -272,12 +281,16 @@ class Ranges:
 	# if that fails, we die and you get a wierd TypeError.
 	# So really, you want to use Ranges.len(), not len(Ranges).
 	def __len__(self):
+		"""Due to technical limitations of CPython, you should
+		use Ranges.len() instead of len(Ranges)."""
 		return int(self.len())
 
 	def __nonzero__(self):
 		return len(self._l) > 0
 
 	def __cmp__(self, other):
+		"""Any comparison between Ranges other than for inequality or
+		equality has undefined results."""
 		if self.__eq__(other):
 			return 0
 		# invalid to use except as ==, so I don't CARE.
@@ -288,6 +301,7 @@ class Ranges:
 	# return an iterable). Since functions that use 'yield' are
 	# actually iterable generators...
 	def __iter__(self):
+		"""Yields every number in the set of ranges."""
 		for rng in self._l:
 			# We would use xrange, except xrange demands
 			# ints, not longs, and sometimes we store longs.

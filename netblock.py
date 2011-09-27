@@ -8,9 +8,19 @@
 # bit clear and high has it set).
 import ranges
 
+__doc__ = """This module implements sets of IP address ranges,
+supporting various notation for them and various routines for
+dealing with them. The primary data structure is IPRanges, the
+actual IP address ranges.
+
+Ranges can generally be specified as IP addresses, in CIDR notation,
+or as ranges written 'LOWIP-HIGHIP'."""
+
 class NBError(Exception):
+	"""Raised for all netblock errors."""
 	pass
 class BadCIDRError(NBError):
+	"""Raised for a badly formed CIDR; subclass of NBError."""
 	pass
 
 # mask off 32 bits.
@@ -20,11 +30,12 @@ def m32(n):
 	return n & B32M
 
 def lenmask(len):
-	"""Return the mask for a given network length"""
+	"""Return the mask for a given network length."""
 	return m32(-(1L<<(32-len)))
 
 def cidrrange(addr, length):
-	"""Given an IP address and a network size, return the low and high addresses in it."""
+	"""Given an IP address and a network size, return the low and
+	high addresses in it."""
 	m = lenmask(length)
 	# the low end is addr & mask (to make sure no funny business is going
 	# on)
@@ -40,7 +51,9 @@ def cidrrange(addr, length):
 # However, we only accept them in the CIDR context, not in others.
 # Normally specified IP addresses must have all four octets.
 def strtoip(ipstr, min = 4):
-	"""Convert an IP address in string form to numeric."""
+	"""Convert an IP address in string form to numeric form (an unsigned
+	32-bit integer in host byte order). min is the number of octets that
+	the IP address string must have."""
 	res = 0L
 	n = ipstr.split('.')
 	ln = len(n)
@@ -59,10 +72,13 @@ def strtoip(ipstr, min = 4):
 	res = res << (8L * (4-ln))
 	return res
 def convip(s):
+	"""Returns the start and end range of a single IP address, ie
+	(ipnum,ipnum)."""
 	res = strtoip(s)
 	return (res, res)
 def convcidr(cstr, strict = 1):
-	"""Returns the start and end IPs of a CIDR from a string."""
+	"""Returns the start and end IPs of a CIDR from a string. strict
+	is whether the CIDR must be a proper one."""
 	pos = cstr.find('/')
 	ip = strtoip(cstr[:pos], min = 1)
 	try:
@@ -92,6 +108,9 @@ def convrange(s):
 # of low-high. 'Strict' is whether the CIDR should insist that it
 # start on its boundary, and defaults to yes.
 def convert(s, strict = 1):
+	"""Return a (low,high) IP number tuple for s, regardless of
+	whether s is a CIDR, an IP address, or a range. strict is
+	whether the CIDR is allowed to be an odd CIDR."""
 	if '/' in s:
 		return convcidr(s, strict)
 	elif '-' in s:
@@ -107,11 +126,13 @@ def octet(ip, n):
 	return (ip >> s) & 0xff
 
 def ipstr(ip):
-	"""Convert IP number to string form"""
+	"""Convert an IP address in numberic form to string form."""
 	o1, o2, o3, o4 = octet(ip,0), octet(ip,1), octet(ip,2), octet(ip,3)
 	return '%d.%d.%d.%d' % (o1, o2, o3, o4)
 
 def cidrtostr(ip, len):
+	"""Convert an IP number and a length to CIDR string, or to a simple
+	IP address string if len is 32."""
 	if len == 32:
 		return ipstr(ip)
 	else:
@@ -127,7 +148,8 @@ def fmaxlen(ip):
 	return 0
 # For internal use, we append the results to a list.
 def lhcidrs(lip, hip, lst):
-	"""Convert a range from lowip to highip to a set of address/mask values."""
+	"""Convert a range from lowip to highip to a list of CIDR
+	address/length values that are appended to lst."""
 	while lip <= hip:
 		# algorithm:
 		# try successively smaller length blocks starting at lip
@@ -148,10 +170,22 @@ def lhcidrs(lip, hip, lst):
 
 # This class handles network blocks.
 class IPRanges(ranges.Ranges):
-	"""Sets of IP address ranges.
+	"""Sets of IP address ranges (or single IPs, or both).
 
-	All IP address arguments are supplied as strings."""
+	All IP address arguments are supplied as strings, including for
+	'in'. Iterating an IPRanges object yields each IP address that
+	is included in the set of address ranges. The length of an IPRanges
+	object is how many IP addresses it contains.
+	
+	The general interfaces accept three forms of addresses or address
+	ranges: single IP address, CIDRs, or LOWIP-HIGHIP ranges. CIDRs
+	must normally be 'proper', where the IP address is the low end of
+	the proper CIDR. CIDRs may be specified in short form, eg 127/8.
+
+	This is built on top of ranges.Ranges; see there for more things."""
 	def __init__(self, ival = None):
+		"""Optional ival is the initial IP address (range); it is
+		passed to .add()."""
 		ranges.Ranges.__init__(self)
 		if ival:
 			self.add(ival)
@@ -168,18 +202,26 @@ class IPRanges(ranges.Ranges):
 	# for each other, we accept all three equally and just parse them
 	# ourselves.
 	def add(self, val):
+		"""Add any form of IP address that we accept to this set
+		of IP address ranges."""
 		(low, high) = convert(val)
 		self.addrange(low, high)
 
 	# This allows 'odd' CIDRs, which are rejected by 'add'.
 	def addoddcidr(self, val):
+		"""Add an improper 'odd' CIDR (one with an IP address that
+		is not its lower boundary) to this set of IP address ranges."""
 		(low, high) = convert(val, 0)
+		self.addrange(low, high)
 
 	# Remove works similarly.
 	def remove(self, val):
+		"""Remove any form of IP address that we accept from this
+		set of IP address ranges."""
 		(low, high) = convert(val)
 		self.delrange(low, high)
 	def removeoddcidr(self, val):
+		"""Remove an odd CIDR from this set of IP address ranges."""
 		(low, high) = convert(val, 0)
 		self.delrange(low, high)
 
@@ -188,6 +230,9 @@ class IPRanges(ranges.Ranges):
 	# Except for efficiency's sake, we want to allow a number so that we
 	# can avoid repeated strtoip() calls.
 	def __contains__(self, val):
+		"""Our argument (the first argument to 'in') is taken as
+		a string, not an IPRanges object. Use .subset() if you want
+		to know if one IPRanges is a subset of another."""
 		if isinstance(val, (int, long, float)):
 			return ranges.Ranges.__contains__(self, val)
 		else:
@@ -195,6 +240,8 @@ class IPRanges(ranges.Ranges):
 
 	# Convert ourselves to a list of strings of CIDR netblocks.
 	def tocidr(self):
+		"""Return a list of CIDR netblocks (as strings) that represent
+		this set of IP address ranges."""
 		r = []
 		for irng in self._l:
 			lhcidrs(irng[0], irng[1], r)
