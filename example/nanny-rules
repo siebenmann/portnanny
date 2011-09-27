@@ -1,0 +1,36 @@
+# this is an example. Given the rest of the file, we're not going to enable
+# this.
+#loint/nt: localip: 127/8 AND !localip: 127.0.0.1
+
+denied/label=10-addr:	localip: 127.0.0.10
+denied/label=11-addr:	localip: 127.0.0.11
+setenvtest:	localip: 127.0.0.12
+remote:		localip: 127.0.0.20
+
+# This should generate an action-time failure.
+failrule:	localip: 127.0.50.0
+
+# this is a BLATANT LIE, but it's handy for testing!
+hawkwind:	localip: 127.0.0.13
+quietdrop:	localip: 127.0.0.22 && seenwithin: 30s
+hawkwind:	localip: 127.0.0.22
+
+foobar:		dnsbl: sbl.spamhaus.org dnsbl: cbl.abuseat.org
+		dnsbl: opm.blitzed.org dnsbl: relays.visi.com
+		dnsbl: list.dsbl.org dnsbl: pss.spambusters.org.ar
+		dnsbl: l1.spews.dnsbl.sorbs.net dnsbl: dul.dnsbl.sorbs.net
+		dnsbl: dnsbl.njabl.org dnsbl: bl.spamcop.net
+foobar:		IDENTD
+
+localhost: 127/8 AND local: 4040
+localhost: 127.0.0.1
+
+# My imagination is dead.
+hawkwind:	128.100.102.51
+hawklords:	128.100.102.52
+
+remote:		ALL
+
+# this rule is too noisy for routine testing, although it makes a handy
+# example of an /always rule.
+#fidentd/always:	IDENTD

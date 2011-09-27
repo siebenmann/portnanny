@@ -1,0 +1,975 @@
+	PORTNANNY CONFIGURATION
+
+ Portnanny is configured through three files: the configuration file,
+the rules file, and the actions file. The configuration file is read
+once on startup to define things such as what the names of the rules
+and actions files are; the rules and actions files are reloaded every
+time they change.
+
+ All files allow comment lines, blank lines, and continued lines.  A
+comment line is any line that has '#' as the first non-whitespace
+character; eg
+	# this is a comment
+is a comment line. Comment lines are always ignored completely.
+Lines in all three files may be continued simply by indenting the
+second and subsequent lines with whitespace; eg, ignoring the
+leading tab:
+	this will
+		be
+	 one logical line.
+turns into 'this will be one logical line.'. It is illegal to start
+the first non-comment line in a file with whitespace, as it would be a
+continuation to a nonexistent first line. Comments (with any
+indentation) may occur in the middle of continued lines and are duly
+ignored.
+
+THE PROCESS
+
+ Portnanny operates by sorting each new connection into one or more
+classes, and then checking any limits and doing any actions specified
+for the classes that the connection is a member of. A new connection
+can be a member of one class, many classes, or of none; if it is a
+member of more than one class, it must satisfy the limits of all of
+the classes it is a member of.
+
+ Portnanny only performs one action for new connections. If a new
+connection is a member of more than one class that wants to do an
+action (usually starting a program and handing the connection to it to
+deal with), the class who's action is carried out is the one that was
+matched earliest.
+
+ It is possible for a new connection to be a member of no classes, or
+to be a member of no classes that specify any action to do. If this
+happens, portnanny closes the connection. In general, portnanny must
+be actively told to do something; if it is told nothing, it does
+nothing, and if it does nothing it drops the connection.
+
+ Portnanny's two major files each control one half of this process.
+
+ The rules file specifies how new connections are sorted (aka
+classified) into classes. Each line is a rule; if a new connection
+satisfies the rule, it is a member of the rule's class. A single class
+can have more than one rule in the rules file.
+
+ The actions file specifies what limits apply to members of classes
+and what should be done for new connections that fall into each
+particular class. Because it makes no sense to specify several
+versions of what to do or what limits to apply for the same class
+(which set should portnanny pick?), classes can only be specified in
+the actions file once.
+
+ Not all classes that are mentioned in the rules file have to be in
+the actions file. A class that isn't in the actions file imposes no
+limits and causes no actions to happen for new connections that are
+members.
+
+ Portnanny maintains a count of how many active connections are
+members of each class as well as how many active connections there are
+from a given IP (regardless of what classes they are members of;
+connections from the same IP address are not necessarily all members
+of the same class). These counters are used to enforce connection
+limits and are maintained dynamically as new connections are made and
+old connections die off.
+
+
+THE CONFIGURATION FILE
+
+ Portnanny's configuration file is named on the command line. It
+contains a series of directives, each of which has exactly one
+argument.
+
+ The directives, and their arguments (given in uppercase) are:
+
+	rulefile FILE		Gives the filename of the rules file
+	actionfile FILE		Gives the filename of the actions file
+
+	listen PORT[@IP]	Portnanny will listen for new connections
+				on the given port and IP address. If
+				no IP address is given, portnanny will
+				listen for new connections on the given
+				port on all IP addresses of the machine.
+
+				Portnanny accepts 'PORT@' and 'PORT@*'
+				as synonyms for a bare 'PORT'. PORT must
+				be a number.
+
+				You may specify multiple listen
+				directives. 
+
+	user USERNAME		Portnanny will change to the user ID
+				and groups of this user right after
+				it has set up the TCP/IP ports to
+				listen on. Failure to successfully
+				do so immediately aborts the program.
+				The process after 'user USERNAME' has
+				the same UID and set of groups that the
+				user would normally get through logging
+				in or using 'su'.
+
+	dropipafter TIMESPEC	If an IP address has not made a new
+				connection to us for TIMESPEC, discard any
+				information we have been maintaining about
+				the times of its previous IP connections.
+				The default is that time information
+				about such connections will never be
+				expired if portnanny is maintaining
+				it. (See later for a discussion of when
+				portnanny keeps such information.)
+	expireevery TIMESPEC	Check for things to expire no more than
+				every TIMESPEC amount of time. The default
+				is 60 seconds (if there is any point,
+				ie if dropipafter is specified). A value
+				of '0' means 'at every connection'.
+
+				TIMESPEC is a number with 's', 'm',
+				'h', or 'd' after it, to indicate that
+				many seconds, minutes, hours, or days.
+
+	onfileerror WHAT	What to do if the actions file or the
+				rules file contain an error when they
+				are reloaded. May be 'use-old' or 'drop';
+				'use-old' is the default.
+
+	substitutions [on|off]	If 'on' (the default), string
+				substitutions in the actions file are
+				enabled. If 'off', they are disabled.
+				See the discussion of the actions file
+				for details. 'off' is for cautions people
+				who want safety.
+
+	maxthreads NUMBER	Portnanny can use up to NUMBER threads
+				to evaluate rules for new connections in
+				parallel, instead of having to evaluate
+				each new connection one after the other
+				in a main process. The default is zero
+				(threading is disabled).
+	aftermaxthreads CLASS	When portnanny is over the thread maximum,
+				new connections will be immediately made
+				members of CLASS without evaluating any
+				rules. If unset, portnanny evaluates
+				rules for the new connection in the
+				main process, as if threading was disabled.
+
+ When portnanny reloads files, it does so as a unit. If a new version of
+a file contains an error, no information from the new version will be
+used -- even if the error was at the very end of the file.
+
+ With 'onfileerror use-old', portnanny does not discard the old version
+of a file until it has successfully loaded the new version. This means
+that portnanny will continue dealing with new connections under the old
+rules until you fix the error.
+
+ With 'onfileerror drop', portnanny immediately discards the old version
+of a file when it tries to reload a new version of it. If the new file
+fails to reload, portnanny acts as if the file was empty and all further
+connections will be dropped until the file is corrected and loads
+successfully.
+
+ Note that the rules and the actions files are loaded separately. It is
+possible to update both and have one load and the other contain errors;
+in that case, under 'use-old' portnanny will try to use the new version
+of one with the old version of the other, which may not work too well.
+
+ 'use-old' is more resilient in the face of a stream of minor updates; a
+stupid typo will not kill the service entirely. 'drop' is more paranoid;
+you are guaranteed that either your update took or portnanny is not
+serving anything to anyone.
+
+ The configuration file must name the rules file and the actions file,
+and have at least one 'listen' directive. Everything else is optional.
+
+ You cannot have both 'listen PORT@*' and 'listen PORT@IP' for the
+same port; the operating system won't accept it. (The reasons are
+complex but good.) If you do this in a portnanny configuration you
+will get an error at startup time.
+
+ If portnanny is not listening at a specific PORT@IP combination,
+people connecting to there will get 'connection refused' errors.
+This both consumes less resources and is somewhat more friendly
+to users than having portnanny listen to 'PORT@' and immediately
+drop connections that are made to 'PORT@undesired-IP'; it also
+immunizes you against rules mistakes allowing undesired access.
+'listen PORT@127.0.0.1' is often used to create a TCP service
+that can only be connected to from the machine itself.
+
+ Threading is used to make portnanny respond faster to multiple new
+connections that are made closely together. It is discussed in more
+detail later. By default, portnanny does not use threading; this is
+appropriate for many relatively simple configurations or low-load
+services.
+
+
+THE RULES FILE
+
+ Lines in the rules file have the general form:
+
+	CLASSNAME[/NOTES]: EXPRESSION
+
+ There are four valid notes: /always, /nt, /nonterminal (equivalent to
+/nt), and /label[=LABEL]. If /label is given with no LABEL, the LABEL
+is taken to be EXPRESSION.
+
+ Portnanny decides what classes each new connection is by evaluating
+each line's expression; if it is true, the new connection is a member
+of the class CLASSNAME and the rule is said to have matched.
+
+ Portnanny usually stops evaluating rules once one has matched. There
+are two exceptions: rules marked /nt do not stop the evaluation
+process, and rules marked /always are always evaluated. The exception
+to the exception is that once a connection is a member of a class, no
+further rules for that class will be evaluated.
+
+ Thus the result of rules evaluation is a list of classes that the
+connection is a member of, in the order that they matched; this list
+can be empty. If the connection is a member of at least one class,
+portnanny also makes it a member of the pseudo-class 'GLOBAL', putting
+this class at the end of the list.
+
+ Portnanny maintains some information about which specific rule
+matched to make the connection a member of a given class: the line
+number of the rule and the label associated with the rule (if it has
+one). How these pieces of information can be used is covered later.
+
+ Before we get into the specifics of rule expressions, we should say
+that in general portnanny expressions attempts to look a lot like
+tcpwrappers expressions. For normal basic cases involving IP addresses
+and hostnames (and not using the additional expression power of
+portnanny) you should be able to write expressions which are pretty
+much the same. Possibly completely identical.
+
+ Rules file expressions are made up of operands joined together with
+operators. In order of precedence (high to low), the operators are:
+	( .. ), !/NOT, or-list, AND/&&, EXCEPT
+Operator parsing and association is left to right, so 'a EXCEPT b
+EXCEPT c' is '(a) EXCEPT ((b) EXCEPT (c))'. An 'or-list' is simply a
+list of operands, which is true if any of them are; thus 'a b c d
+EXCEPT e f g' is '(a b c d) EXCEPT (e f g)', and is true if any of a,
+b, c, or d is true and none of e, f, or g is.
+
+ Portnanny only evaluates as much of the expression (and of bits of
+the expression) as it needs to do in order to determine whether it is
+true or false. This is usually unimportant but becomes relevant in
+some cases.
+
+ Rules are normally broken into words (the operators and operands) by
+spaces, except that !, (, ), and && are special and are recognized
+inside normal words; this allows '(a&&b)' to be what you expect. Things
+may be quoted with single quotes; to put a single quote inside a quoted
+object, use '' (two quotes). Quotes do not break words, so: a'&&'b,
+a'foobar'b, a' 'b, and 'a b c d e f' are each one word. To use an
+operator as a normal word, you must quote it.
+
+ Operands evaluate to either true or false based on some
+characteristic of the new connection, and come in three forms:
+	MATCHER: ARGUMENT
+	MATCHER
+or	ARGUMENT
+If the operand is a bare argument, portnanny tries to see if the
+matchers for IP addresses or hostnames think it is a valid IP address
+match or hostname match. (It is an error if neither of them like it.)
+
+ Some matchers take no argument; they are 'ALL', 'UNKNOWN',
+'PARANOID', 'KNOWN', and 'IDENTD' (by convention, inherited from
+tcpwrappers, no-argument matchers are in upper case).
+
+ ALL is always true.
+ IDENTD is true if identd (aka auth) data is available for this
+connection.
+
+ UNKNOWN, KNOWN, and PARANOID are the same as in tcpwrappers. KNOWN is
+true if there is a validated hostname for the remote IP address;
+UNKNOWN is true if there is no hostname for the IP address; PARANOID
+is true if either the claimed hostname doesn't exist or the claimed
+hostname lists IP addresses that do not include the remote IP
+address. Note that 'NOT KNOWN' is '(UNKNOWN PARANOID)'.
+
+ The remaining matchers all take an argument and match something
+against it.
+
+	identd:		- matches the username returned from an identd
+			  query. (Implicitly implies IDENTD.)
+
+	class:		- matches against the classnames of already
+			  matched rules. Clearly, either that rule was
+			  /nt or this one is /always.
+
+	forwhn:		- matches if the remote IP address is one of
+			  the IP addresses returned when we look up
+			  the argument as a hostname.
+
+	answerson: PORT	- a TCP connection can be established to
+			  port PORT on the remote machine (PORT must
+			  be a number).
+
+	ip: ADDRSPEC
+
+ This matches the remote IP address. ADDRSPEC can be any of the
+following:
+- an IP address.
+- a partial IP address that ends in a '.', such as '128.100.'; this
+  matches any IP address that starts with that, in the style of
+  tcpwrappers.
+- a CIDR netblock, such as '127.0.0.0/24'.
+- an explicit range, specified with a dash:
+  '127.100.0.0-127.100.1.53'.
+
+ A CIDR netblock must be 'proper', which is to say that the listed IP
+address must be the start of the appropriately-sized CIDR netblock
+containing it. '127.0.0.1/24' is not a proper CIDR netblock; a /24
+covering 127.0.0.1 would start at 127.0.0.0. Portnanny rejects
+improper CIDR netblocks because there are at least two possible
+interpretations for what they mean.
+
+	localip: ADDRSPEC
+
+ This is like ip: except for the local IP address instead of the
+remote IP address.
+
+	hnstatus: STATUS
+
+ This is true if the hostname lookup status is the given
+status. Possible statuses are
+- 'good': equivalent to KNOWN
+- 'unknown': equivalent to UNKNOWN
+- 'noforward': the IP address claims a hostname, but the hostname
+  doesn't exist.
+- 'addrmismatch': the IP address claims a hostname, which exists, but
+  the hostname does not list the IP address as one of its IP
+  addresses.
+
+ '(hnstatus: noforward hnstatus: addrmismatch)' is the same as
+PARANOID.
+
+	hostname: HOSTARG
+
+ This matches the hostname of the remote IP address. If KNOWN is not
+true, this automatically fails. Otherwise it may be a full hostname or
+it may be a domain postfix starting with a '.', tcpwrappers style. An
+argument starting with '.' matches if the hostname ends with that (so
+'.foo.com' matches 'a.foo.com') or if the hostname equals the argument
+minus the dot (so '.foo.com' also matches 'foo.com').
+
+ All hostname comparisons are case-independent.
+
+ If the operand specifies no matcher, ip: and hostname: are tried in
+that order. This allows one to write tcpwrappers-like expressions
+like '128.100. 127. .utcc.utoronto.ca'.
+
+	re: REGEXP
+
+ This matches the regexp against the hostname of the remote IP
+address; like hostname:, this always fails if KNOWN is not true.
+The match is case-independent and unanchored (if you want to match the
+beginning or end of the hostname, you must use '^' and '$'). The
+regexp is a Python regexp, essentially equivalent to Perl regexps.
+
+	claimedhn:
+	claimedre:
+
+ THESE ARE DANGEROUS.
+ These are just like hostname: and re:, but they apply to the
+'claimed' hostname. The claimed hostname is the unverified result of
+the IP to name lookup of the remote IP address, and thus these differ
+from the standard hostname:/re: lookups only if PARANOID is true.
+
+ Since the claimed hostname may be totally under the control of the
+person connecting to you, it should not be trusted to authorize
+connections. However, the author finds it convenient to have it
+available to *reject* some connections, as some nameless large ISPs
+have useful IP to name information but have not bothered setting up
+the corresponding name to IP mappings.
+
+ Plus, you can use it to blow off anyone who thought it was a clever
+idea to have their IP to name mapping resolve to an IP address.
+
+	local:	[PORT][@][IP]
+
+ This is true if the local IP and port match those specified. Both IP
+and PORT must be numeric. Either (but not both) can be missing or '*',
+in which case they match all values; thus 'local: 119@' matches all
+connections to local port 119.
+
+ The 'local:' directive is how you tell apart which local port the
+connection is for, if portnanny is listening on multiple local ports.
+
+	dnsbl: DNSBLDOM[/IPADDR]
+
+ This matches if the remote IP address is found at the DNS blocklist
+rooted at DNSBLDOM, such as 'sbl.spamhaus.org', using the standard
+query form of name to IP address lookup on the reversed IP address. If
+the optional IP address is specified, this only matches if the DNSBl
+returns the IP address among the results of the query.
+
+ Some DNSBls use returned IP addresses to distinguish sub-categories
+of their DNSBl. /IPADDR allows you to make use of this information,
+but is otherwise not needed.
+
+	firsttime
+	seenwithin: TIMESPEC
+	notseenfor: TIMESPEC
+	stallfor: TIMESPEC
+	waited: TIMESPEC
+
+ TIMESPEC is a number suffixed by 's', 'm', 'h', or 'd', meaning that many
+seconds, minutes, hours, or days ago.
+
+ firsttime is true if this IP address is connecting to portnanny for
+the first time on record.
+
+ seenwithin: and notseenfor: are true if the remote IP address last
+connected to us within TIMESPEC or not within TIMESPEC, respectively.
+
+ stallfor: and waited: are true if the remote IP address first
+connected to us within TIMESPEC or not within TIMESPEC, respectively.
+
+ Portnanny only records connection time information for connections
+that have one of these matchers applied to them. Keeping this
+information for all connections would cause portnanny to grow its
+memory use based on the number of distinct IP addresses that connected
+to it, regardless of whether the information on their connection time
+was of any use.
+
+ If the configuration file specifies a 'dropipafter' directive,
+portnanny will periodically discard all cached information for IP
+addresses who have not connected to us within that many seconds (ie,
+IP addresses for whom 'notseenfor: EXPIRETIME' would be true).  If one
+of those IP addresses connects again, it will be seen as a first time
+connection and so on.
+
+ In addition, portnanny makes no attempt to preserve this information
+if it is stopped and restarted.
+
+
+HOST INFORMATION LOOKUP
+
+ Some information can be expensive to look up. Determining the
+hostname can take DNS queries; determining the identd information
+requires making a connection to the target machine; and we've just
+discussed the overheads of first and last connection time.
+
+ In order to run as fast as possible, portnanny only looks up such
+expensive information if it is explicitly asked for. For example, if
+all of your rules match only IP addresses, portnanny will never
+perform hostname lookups.
+
+ While this is not important for rules (portnanny materializes any
+information necessary), it affects the information available for
+logging. In the above example, logging would never record a hostname
+(even if a valid one was available for some of the IPs).
+
+ Recall that portnanny evaluates only as much of the rules as
+necessary in order to determine whether or not they're true. This
+means that if a particular lookup is in a rule but not necessary to
+determine the rule's result, it will not be performed. For example:
+	example:	128.100. identd: bad-idea
+will not perform an identd lookup for a connection for a connection
+from a 128.100.*.* IP address. This means that later logging of
+information about connections that are members of 'example' may or may
+not have identd data available for them. 
+
+ At the same time, this can be exploited (even within one rule) to
+avoid more expensive lookups if they're not needed. For example,
+listing all IP matches before hostname matches will avoid potential
+lookup delays on hostname lookups. As another example, there is a
+potential big speed difference between
+	example1:	identd: cks AND 128.100.
+and	example2:	128.100. AND identd: cks
+for connections that are not from 128.100.*.*. On the other hand, if
+you want identd data to be available for all connections if possible,
+the example1 version is obviously better.
+
+ As a corollary, recall that after a class matches once, no further
+rules for it are evaluated (no matter how they're noted). This is
+importantly different from 'no duplicate class matches are added to
+the list of matches', because it means that their expressions are not
+evaluated at all, which means that they do not cause (or force) any
+additional information lookups.
+
+ If you want to force certain information to be available for logging
+purposes, include /nt or /always rules for otherwise unused 'dummy'
+classes that force it to be looked up.
+
+THREADING
+
+ Evaluating rules to determine what classes a new connection should be
+sorted can require portnanny to pause to look up information about the
+remote machine, such as its hostname. These pauses can potentially be
+quite long.
+
+ By default, portnanny is single-threaded: it deals with one connection
+at a time, no matter how long that takes. This is simple and reliable
+and works on all Unix systems, but means that if there are several new
+connections at nearly the same time, the unlucky ones may have to wait
+quite a while to get dealt with.
+
+ In order to support high-load, high-demand services with multiple,
+time-consuming lookups (such as checking several DNS blocklists),
+portnanny supports evaluating rules in multiple threads. However, this
+may not work on all Unix systems (it is known to work on Linux).
+
+ In order to not overwhelm systems, portnanny limits the maximum
+number of threads that can be evaluating rules at any one time via
+the 'maxthreads' configuration parameter (and a command-line switch).
+
+ When portnanny has reached this limit its behavior depends on whether
+or not 'aftermaxthreads' was set. If it was not set, portnanny
+temporarily behaves as if it was single-threaded: the main process
+evaluates the new connection, and all further ones have to wait until
+that's done.
+
+ When 'aftermaxthreads' is set and portnanny has hit the threads limit,
+portnanny immediately sorts the new connection into the named class, as
+if it had been matched by a rule in the rule file (thus, it actually
+matches the class and 'GLOBAL'). It then continues on normally to look
+for actions to do and so on. This can be used for such things as giving
+an error message during overload conditions. It can also be used to
+immediately drop such connections, either explicitly by having the class
+in the action file drop them or implicitly by not having that class
+defined in the actions file.
+
+ Threaded rules evaluations have several unobvious consequences; all are
+differences from the single-threaded case.
+
+ First, while the version of the rules file that a new connection uses
+is frozen at the time it starts rules evaluation, no matter how long
+that takes and how many times the rules file changes in the mean time,
+the actions file is *not* similarly frozen. This can significantly
+lengthen the amount of time where it's possible to have portnanny use
+mismatched rules and actions files.
+
+ Second, because portnanny freezes the version of the rules file when
+rules evaluation starts, it cannot immediately release that memory when
+a new version of the rules file is loaded. Each version of the rules
+file can only be freed up when the last thread evaluating a connection
+uses it exits. If you are unlucky and change the rules file repeatedly
+very rapidly, portnanny's memory usage may temporarily increase quite
+significantly.
+
+ Because of the above, the effects of 'onfileerror drop' and a bad
+rules file may take a bit of time to take full effect. On a very active
+service, you may see a number of connection be logged as successfully
+processed even after the reload error message. However, because it
+isn't frozen, an erroneous actions file will take immediate effect.
+
+
+THE ACTIONS FILE
+
+ The actions file is used to specify the limits that apply to
+classes and what action should be performed when a new connection
+is a member of the class. Each entry is said to be the 'action rule'
+for a particular class.
+
+ Lines in the actions file have the general form
+
+	CLASSNAME: DIRECTIVE [ARGS] [ : DIRECTIVE ARGS ...]
+
+ Because it specifies per-class information, no class can be named
+more than once in the actions file, and most directives can only be
+given once per class.
+
+ Directives are separated from each other by a colon with whitespace
+on both sides; 'a : b' is valid, but 'a: b' does not separate two
+directives. This is necessary to allow simple use of embedded :'s in
+action rules.
+
+ An action rule must have at least one directive (otherwise it's
+pointless and is assumed to be an error).
+
+ The available directives are:
+
+	run CMDSTRING
+	msg MESSAGE
+	failrun CMDSTRING
+	failmsg MESSAGE
+	drop
+	reject
+	quiet
+	log [MESSAGE]
+	faillog MESSAGE
+	norepeatlog
+	record MESSAGE
+	ipmax NUM
+	connmax NUM
+	setenv VARNAME STRING
+	subst NEWNAME STRING
+	see CLASS
+
+ 'ipmax' and 'connmax' specify maximum connection limits. The first
+limits the total number of connections from this IP; the second limits
+the total number of connections that are members of this class (or
+were at the time they were made and classified, as the classification
+rules may have changed since then). If unspecified on a class's action
+rule, no limit is imposed by this class.
+
+ If a class imposes a connection limit and a new connection would go
+over it, the class is said to refuse the connection. A connection
+limit of 0 (or below) causes all new connections to be refused.
+
+ If no class that a new connection is a member of refuses it, the
+connection is said to have been accepted.
+
+ 'reject' causes this class to refuse all connections. The same thing
+can be accomplished with 'ipmax 0' or 'connmax 0', but portnanny uses
+different default log messages when 'reject' is specified, and you can
+specify 'reject' as well as 'ipmax' and 'connmax' (this is handy for
+temporarily disabling connections for classes).
+
+ 'failrun' or 'failmsg' describe what this class wants to happen to new
+connections if this class refuses the connection. 'failrun' causes a
+program to be started and the connection passed to it; 'failmsg' causes
+the message to be sent to the new connection and then the connection
+closed. If neither is specified when the class refuses a connection,
+the connection will just be closed silently (this is the most efficient
+thing for portnanny to do; 'failmsg' takes somewhat more work and causes
+somewhat more load on the server).
+
+ Similarly, 'run' or 'msg' describes what this class wants to happen
+to accepted connections: run a program or send out a message.
+
+ No class can have both 'run' and 'msg' directives specified, or
+'failrun' and 'failmsg', because portnanny has no way of deciding
+which action would win.
+
+ 'drop' means that this class wants accepted connections to be quietly
+closed. 'drop' can be specified alongside 'run' or 'msg' and takes
+precedence over them.
+
+ If the class specifies none of 'run', 'msg', or 'drop' it has no
+particular action it wants taken on new connections.
+
+ 'setenv' creates new environment variables and values that will be
+passed to any program started via 'run' or 'failrun'. A class can
+have multiple 'setenv' directives, but you can't setenv the same
+environment variable more than once.
+
+ 'subst' creates additional string substitutions that will be available
+in any string substitutions done for this class, *excluding* 'record'
+directives. A class can have multiple 'subst' directives, but (like
+setenv) you can't subst the same name more than once. Built-in string
+substitutions override 'subst' definitions of the same names, causing
+the 'subst' provided values to be silently ignored.
+
+ 'see' names another class to look at for any information that this
+class does not supply itself. The effect is as if this class included
+the text of the 'see''d class's directives (and in turn, any classes
+that that class 'see''s). If several classes in a chain of 'see's
+have the same directive, the first one the occurs is the one used;
+in 'A: see B : ipmax 10' and 'B: ipmax 5', the 'ipmax' value used
+for connections that are members of A is 10, not 5.
+
+ Obviously there cannot be loops of 'see' references ('A: see B' and 'B:
+see A'). Portnanny also insists that all classes named as the target
+of 'see' directives exist. However, they can be in any order in the
+actions file; there is no requirement to define classes that will be
+'see' targets earlier in the file than the classes that 'see' to them.
+(Indeed, it may make sense to define them later.)
+
+ 'see' combines 'subst' and 'setenv' directives in multiple classes
+by using all of them, merged together. If multiple classes try to
+set a value for the same environment variable or the same new string
+substitution, only the first one is used: 'A: see B : setenv a b'
+and 'B: setenv a c' will result in the environment variable 'a'
+having the value 'b'. 
+
+ 'faillog' sets the message to be logged if this class is the one that
+refused a new connection. If 'faillog' is not set and this class
+refuses a new connection, portnanny will look for a default message to
+log in a number of places (described later).
+
+ 'quiet' suppresses looking for default 'faillog' messages. 'quiet'
+does not suppress following 'see' directives.
+
+ 'log' or 'log MESSAGE' sets the message to be logged if this class
+specifies the action to be taken for a new connection. If no message
+is specified, portnanny uses a default message. In the absence of
+'log', portnanny logs no message in this situation; this is unlike
+'faillog', because success is considered to be an ordinary situation
+not worth cluttering up logs with. (The author runs reasonably active
+systems and so does not want to get a message per connection in his
+logs.)
+
+ 'record' sets a message to be logged any time a new connection is a
+member of this class.
+
+ 'norepeatlog' means that this class doesn't want to bother logging a
+log message if it's the same as the last log message that portnanny
+logged. A 'log message' here is one of 'log' or 'faillog'; which one
+doesn't matter, only that the message is the same. In particular,
+messages from 'record' are completely unaffected by 'norepeatlog'. The
+net effect is that portnanny will log only the first of a stream of
+'log'/'faillog' messages from a stream of connections, discarding all
+of the rest; this is especially handy with 'faillog' if you are dealing
+with some people who retry their connections very rapidly.
+
+ When portnanny starts commands from 'run' (or 'failrun') it does so
+by taking the argument string, splitting it apart on whitespace, and
+directly executing the result; the program will get each word as an
+argument. If you need to run a program that requires more sophisticated
+arguments, or something such as output redirection, wrap it in a shell
+script and have portnanny run the shell script. For security reasons,
+this split is done before string substitution.
+
+ Programs started by portnanny are started in the fashion of inetd,
+xinetd, and so on: the new connection is their standard input, standard
+output, and standard error. Portnanny tries to make sure that they're
+not passed other stray file descriptors; in particular, it guarantees
+that the network sockets that portnanny itself is listening on are not
+passed on to children.
+
+ If a class refuses a connection and does not have settings for them
+itself, portnanny will look for default 'faillog' and 'failmsg' settings
+from several places; the first one that is found is used. The first
+one is the settings for the class 'DEFAULT-<rejtype>', if it exists,
+where <rejtype> is an upper-case version of why the class refused
+the connection: 'IPMAX', 'CONNMAX', or 'REJECT' (the class specified
+'reject'). The second is the settings of the class 'DEFAULTMSGS', again
+if it exists.
+
+ If it still doesn't have a 'faillog' message, portnanny falls back to
+internal defaults (using one for 'reject' and another for connection
+limits). There is no internal default for 'failmsg', and a default
+'failmsg' is not looked for if the class has specified a 'failrun'.
+
+ These default message source classes are not special in any other way,
+although the author does suggest that you avoid using them as normal
+classes in your rules files.
+
+
+	DECIDING ON THE ACTION FOR A NEW CONNECTION
+
+ As previously mentioned, the result of evaluating the rules file for a
+new connection is a list of classes that the new connection is a member
+of (plus 'GLOBAL'), in the order that they were first matched in the
+rules file.
+
+ Portnanny takes the list and looks up each class in the actions file.
+Some of them may not be specified in the actions file (for example, you
+may have no GLOBAL class defined), in which case they are ignored during
+further processing.
+
+ For each class that it finds, portnanny checks to see if the class
+refuses the connection (whether because of 'reject' or because of
+connection limits). If it does, the class that refuses the class is
+said to be the 'action class'.
+
+ If no member class refuses the connection, the connection is successful
+and portnanny looks the classes up again to find the first class that
+specifies an action to take for successful connections (one of 'drop',
+'run', or 'msg'). If there is such a class, it is said to be the 'action
+class'.
+
+ If there is an 'action class' it is used to determine what action to
+perform and what messages to log about it. Only the 'log' or 'faillog'
+values of the *action class* are used; if a class is not the action
+class, only a 'record' directive will cause a message to be logged.
+Similarly, only the 'failrun' or (possibly defaulted) 'failmsg'
+values of the class that refused the connection are used on refused
+connections; if it has neither, portnanny takes its default 'nothing to
+do' action and closes the connection.
+
+ A connection will be counted against connection maximum limits if is
+performing *either* a 'run' or a 'failrun' action. If you use 'failrun',
+this implies that the connection maximums are not an upper bound on the
+number of processes that portnanny starts; see the discussion on load
+limiting, later.
+
+ If there is no action class, because no class refused the connection
+but no class specified an affirmative action for new connections,
+portnanny falls back to the default behavior of 'well, do nothing' and
+closes the connection.
+
+ The GLOBAL class is generally intended to be used to implement global
+connection limits. Because it is treated as a normal class that
+the connection is a member of, it is possible to use it to create
+(implicitly default) actions for successful connections; however, this
+is somewhat dangerous -- effectively you are defaulting to portnanny
+performing an action instead of doing nothing. (It is not quite
+this, because new connections only become a member of GLOBAL if they
+are already members of at least one other class through rules file
+evaluation.)
+
+LOAD LIMITING AND A CAUTION ON 'FAILRUN'
+
+ Obviously, 'failrun' runs a program. Because it runs a program when the
+connection is *refused*, there is very little load limiting possible.
+All you can do is insure there is always an earlier matching class with
+a higher load limit and no 'failrun' that will at least cut in when you
+are being overwhelmed. If you do not do this, an attacker can cause
+you to start a potentially unbound number of copies of your 'failrun'
+program.
+
+ The most efficient thing to do to unwanted connections is to have
+portnanny just close them, either with 'drop' or with the implicit
+do nothing action of the refusing class not supplying a 'failmsg' or
+'failrun'.
+
+ Using 'msg' or 'failmsg' requires portnanny to fork to insure that
+a slow network to the new connection would not stall other people as
+portnanny tried to write out the message. Portnanny takes some steps to
+limit the amount of time that message-writing children will stick around
+(possibly not enough).
+
+ 'run' / 'failrun' are the most resource-consuming, since they require
+starting an entire separate program.
+
+
+STRING SUBSTITUTION & EXPANSION
+
+ The arguments to log, faillog, failmsg, msg, run, record, failrun,
+and the values of setenv's environment variables (but not their names)
+and subst's values (but not its names) are all run through an internal
+process of string substitution and expansion before use.
+
+ This process is designed to allow the inclusion of connection specific
+information in these places; log messages, arguments to programs
+being started, and so on. Note that for security reasons, the command
+string for 'run' and 'failrun' is split into arguments before string
+substitution, not after it, so spaces in a substitution will never
+create additional command arguments.
+
+ String substitution based on a printf-like expansion of string format
+operators starting with %. The fully general form is '%(THING)<format
+spec>', but normally you are expected to use '%(THING)s' where THING
+is one of the following:
+
+	ip		- remote IP address
+	remport		- remote TCP port number
+	localip		- local IP address
+	port		- local TCP port number
+	hnstatus	- what 'hnstatus:' matches against.
+	claimedhn	- the claimed remote hostname
+	hostname	- the remote hostname, or the same as ip.
+	identd		- the identd information
+	seensince	- seconds since the first connection from this
+			  IP address.
+	lastseen	- seconds since the last connection from this
+			  IP address.
+
+	connsum		- a pretty-printed summary of information
+			  about this connection, roughly
+				%(identd)s@%(hostname)s
+			  except that the '%(identd)s@' is only
+			  present if identd information is valid.
+	connipsum	- as connsum, but instead of the hostname the
+			  IP address is always used.
+
+	class		- the name of the action class.
+	lineno		- the (starting) line number in the rules file
+			  of the rule that matched this class.
+	label		- if the rule in the rules file that matched
+			  this class specified a /label=LABEL note,
+			  this is 'LABEL' with underscores ('_')
+			  changed to spaces (' ').
+
+	cr		- a \r
+	nl		- a \n
+	eol		- \r\n
+
+	limit		- either 'ipmax' or 'connmax' depending on
+			  which connection limit rejected the
+			  connection.
+
+[Plus any additional string substitutions defined by 'subst' directives
+ in the action class.]
+
+ Not all of these substitutions are defined all of the time.
+
+ hnstatus and claimedhn are only present if hostname lookup has been
+done. (hostname is always present; if hostname lookup has not been
+done or has failed, its value is the IP address.)
+
+ identd are only present if identd lookup has been done.
+ seensince and lastseen are only present if time-based lookups have
+been done in the process of evaluating rules.
+
+ label is only present if the relevant rule specified a /label= note.
+
+ limit is only present if the connection was rejected by connection
+limits.
+
+ Use of any of these when they are not defined will cause an error to
+be logged and the connection will be dropped, as will use of any
+unrecognized substitution string.
+
+ 'subst' directives have their value string-substituted only once, when
+they are initially processed.
+
+ Note that 'subst'-provided substitutions are only overridden by
+built-in substitutions *if the built-in substitution is defined*. Thus:
+	A: subst identd UNKNOWN : run whatever :
+	   log Got a connection from %(ip)s with identd %(identd)s
+will *not* error out if identd information was not available for the
+connection; it will instead log it as 'UNKNOWN'. If identd information
+is available, the built-in 'identd' is defined and overrides the subst
+directive.
+
+USE OF SUBST AND SEE
+
+ Consider the following actions file definitions for an example of
+use of 'subst' and 'see':
+	bl-a:	subst blmsg On DNSBL http://foo.bar : see DNSBL
+	bl-b:	subst blmsg http://baz.orp lists you as an open proxy
+		: see DNSBL
+	bl-c:	subst blmsg Please read http://dnsbl/FAQ : see DNSBL
+	bl-d:	subst blmsg Pleass see http://dnsbl2/query?ip=%(ip)s
+		: see DNSBL
+	DNSBL:	faillog refused %(connsum)s: DNS blocklist class %(class)s
+		failmsg 500 Sorry, %(ip)s. Connection refused. %(blmsg)s
+		: reject : norepeatlog
+
+ This condenses the redundant information in class action rules down
+to a minimum, and uses 'subst' to define a per-DNS-blocklist block of
+explanatory text that will be inserted into the failure message that
+appropriate connections will receive. Note that the DNSBL meta-class
+has been used to define not just messages, but also the 'repeat' and
+'norepeatlog' clauses that apply to all DNS blocklist entries.
+
+ In addition, this shows (in bl-d) the new 'subst' text itself
+being expanded before it is defined, and why you might want to
+use something like that.
+
+ Despite the 'faillog' directive being on the DNSBL class, the log
+entries will refer to 'DNS blocklist class bl-a' and the like, because
+portnanny considers the log message to have been generated by the 'bl-a'
+class, not by the DNSBL class. (This is the same thing as happens with
+'DEFAULTMSGS' et al, of course.)
+
+ As a bonus wizard feature, the following actually works correctly:
+	A: see C : subst extra we are coming from %(hostname)s in A
+	B: see C : subst extra we are coming from B
+	C: see E : subst info %(extra)s and from C too
+	D: see E : subst info because we came from %(ip)s
+	E: reject : faillog Failed in E: %(info)s
+
+The process of merging multiple 'subst' values across 'see's defines the
+earlier substitutions (such as A's) before the added substitutions in
+later classes (such as C) are expanded, so C's 'info' can use the new
+'extra' substitution defined in A and B. Of course, if C is ever used
+directly there will be explosions because the '%(extra)s' expansion
+it is counting on is not present. (Note that in this example 'D' can
+be used directly, as its own definition of 'info' doesn't expect
+anything.')
+
+USE OF /LABEL AND MULTI-RULE CLASSES
+
+ The best documentation is an example. Imagine that you are interested
+in identifying and rejecting connections to some service from various
+people's dialup pools. For example:
+[rules sample]:
+	dialups/label=dipDE:	.dip.t-dialin.net
+	dialups/label=AOL:	.ipt.aol.com
+	dialups/label=liwest.at:  re: ^cm[0-9]+-[0-9]+\.liwest\.at$
+	dialups/label=SORBSDUL:	dnsbl: dul.dnsbl.sorbs.net
+[actions sample:]
+	dialups:	reject :
+			failmsg 500 Dialups not accepted, %(ip). :
+			faillog rejected %(connsum)s as dialup,
+				decided by %(labels)s 
+
+ You can then use the logs to not only see what is rejected, but see
+what sources of dialups are connecting to you.
+
+ While you could use %(lineno)s for this, %(label)s both has more
+mnemonic value in logs and summaries and is much more stable over
+time and editing the rules file.
+

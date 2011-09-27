@@ -1,0 +1,7 @@
+I got this code from the net, I believe from a Google search. At this
+point I unfortunately can't remember where. Fortunately it is sufficiently
+generic and the Python internal interfaces sufficiently stable that it has
+gracefully made the transition from Python 1.5.2 to Python 2.3.3 without
+any changes at all.
+
+	- cks, Jul 14 2004

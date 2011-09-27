@@ -1,0 +1,132 @@
+
+ Portnanny is a frontend for TCP/IP based services, like inetd,
+xinetd, and Daniel Bernstein's tcpserver. Portnanny sorts new
+connections into classes and then applies limits, restrictions, and
+options based on what classes the new connection falls into.
+
+ The sorting rules are written in a language modeled after
+tcpwrappers, but with significantly more power. Connections can be
+matched on many characteristics, such as whether or not they are on
+DNS blocklists, and then the individual matches can be combined in
+expressions with full AND, NOT, and EXCEPT operators.
+
+ Portnanny is used when one needs limitations such as 'internal users
+can have 50 simultaneous connections; external users can have 30
+simultaneous connections; and in no case will we allow more than 75
+simultaneous connections overall'.
+
+ Portnanny is also useful if one wants to run different commands (or
+the same command with different options) depending on the various
+characteristics of new connections. You might run the underlying
+program in a more restrictive mode for 'outside' versus 'inside'
+connections, or run a different client implementation entirely for
+some people.
+
+ While it can sit in front of multiple TCP/IP services, portnanny
+works best when all the services it is providing have essentially the
+same rules for classifying new connections into classes. Multiple
+unrelated services are an awkward fit in a single portnanny instance;
+it is really intended that you run multiple portnanny instances, each
+with its own configuration files.
+
+ ENVIRONMENT REQUIREMENTS
+
+ Portnanny requires Python 2.3 or later and a Unix system. It is
+almost entirely pure Python, with one C-based extension module
+to support initgroups(3).
+
+ CONFIGURATION
+
+ Portnanny is driven by three configuration files: the overall
+configuration file and the rules and actions files. The rules
+and actions files will be reloaded during execution when they
+change.
+
+ The file Configuration has documentation (hopefully complete)
+on how portnanny is configured. In the process, it contains a
+writeup of how portnanny processes incoming connections.
+ 
+ You may also want to see nanny.conf, nanny-rules, and nanny-actions.
+
+ SECURITY
+
+ Portnanny is written in Python and so should be free of buffer
+overruns, barring a flaw in the Python implementation.
+
+ Portnanny can be run as root so as to be able to bind to restricted
+ports; in this case an alternate user can (and should) be specified.
+When an alternate user is specified portnanny does its best to turn
+itself into that user as fast as possible and to die if it fails to do
+so.
+
+ Portnanny is not controllable from the network in any way. In fact
+it is only barely controllable from the local machine. On SIGUSR1, it
+flushes certain internal caches, in case you want to tell it to drop its
+memory use as much as it can. On SIGUSR2, it dumps a status report of
+its internal state.
+
+ INVOCATION
+
+ Run portnanny.py. It expects a single argument that is its
+configuration file, and accepts the following switches:
+	-l		- log to syslog instead of stderr
+	-v		- log somewhat more messages
+	-V NUM		- log messages up to NUM level of verbosity;
+			  the higher the level the more messages.
+	-p NAME		- set the program name used for error messages;
+			  this is especially useful for syslog.
+	-C		- exit after checking the configuration files
+			  for various real and potential problems.
+	-M MAXTHREADS	- portnanny can evaluate rules in threads,
+			  instead of serially in one process. This sets
+			  how many threads, maximum, will be used; if
+			  it is zero or below, threading is disabled.
+			  This command-line value overrides the
+			  configuration file one.
+			  The default is to not use threads.
+	-S STACKSIZE	- set the RLIMIT_STACK soft limit to this value,
+			  in kilobytes; use 'unlimited' for unlimited.
+			  This is useful when dealing with NPTL threads,
+			  where you probably want to start portnanny with
+			  a low soft limit so that new threads don't use
+			  up boatloads of virtual memory, but don't want
+			  to cause problems for programs started by
+			  portnanny (or portnanny's main process itself).
+
+
+ NAVIGATING THE SOURCE CODE
+
+ Anything starting with test_ is a unittest for the corresponding
+Python module. The unittests are under-commented and in some cases
+don't test all of their module's functionality (ranges.py is a
+particular offender). The remaining modules starting with test are
+test helpers.
+
+ The main program is found in portnanny.py, which contains mostly
+high-level logic. The low-level matchers for the various connection
+characteristics are in matchers.py; the rules file is handled through
+lexr.py, rdparse.py, and rules.py; the actions file is handled in
+actions.py; and hinfo.py handles looking up and caching low level
+per-connection information (like mapping IP addresses to hostnames).
+Proc.py has miscellaneous Unix glue.
+
+ The author hopes that most of the modules are readable on their own
+without large amounts of context. He also hopes that the comments in
+each module (as scanty as they may be) will be a help. Suggestions and
+critiques of this code are very welcome.  Yes, the author knows this
+is too big.
+
+ COPYRIGHT
+
+ Portnanny is GPL software. In the future, when it is less of an
+under-documented monstrosity, files will carry explicit comments saying
+this and you will find a COPYING file. In the mean time I can't be
+bothered, sorry.
+
+ TRIVIA
+
+ This is portnanny version 2 (portnanny2), which is an almost entirely
+group-up rewrite of the original portnanny now that the author can
+claim to know a bit more about Python.
+
+	- cks, Jul 14 2004 / Jul 17 2004 (so far) 

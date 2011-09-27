@@ -1,0 +1,20 @@
+loint:	record 127/8 not from 127.0.0.1: %(ip)s
+fidentd:	record identd data available: %(connsum)s
+
+#hawkwind:	run /usr/bin/id
+hawkwind:	run rc -c limit
+hawklords:	run echo hello there
+
+remote:		reject : failmsg 400 No thanks, %(hostname)s : quiet
+
+localhost:	run sleep 3
+quietdrop:	reject : quiet
+
+denied:		reject : faillog %(ip)s ejected by %(label)s
+setenvtest:	setenv CONINFO %(connsum)s is here :
+		run /usr/bin/printenv
+
+failrule:	run /bin/echo %(thisshouldfail)s
+
+GLOBAL:		connmax 6 : failmsg 400 Sorry %(ip)s; too many connections.
+
