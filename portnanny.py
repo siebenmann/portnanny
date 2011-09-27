@@ -10,11 +10,6 @@
 import sys, time
 import getopt
 import thread
-try:
-	import sets
-	_hassets = 1
-except:
-	_hassets = 0
 
 import log
 import conntrack, hinfo
@@ -410,8 +405,6 @@ def serve(cfg, sockl, threadmax):
 # Check for file loading and some 'lint' issues.
 def checkcfg(cfg):
 	__pychecker__ = 'no-abstract'
-	if not _hassets:
-		log.die("-C is not available on this version of Python (no sets module).")
 	try:
 		rroot = rules.parsefile(cfg['rulefile'])
 	except rules.BadInput, e:
@@ -435,12 +428,12 @@ def checkcfg(cfg):
 	
 	# 'lint' check: test that the two files define the same set of
 	# rules.
-	rrset = sets.ImmutableSet(rroot.getclassnames())
-	arset = sets.ImmutableSet(aroot.getclassnames())
+	rrset = frozenset(rroot.getclassnames())
+	arset = frozenset(aroot.getclassnames())
 	# It's okay to have actions and not rules for the default message
 	# sources and for the synthetic GLOBAL rule.
-	okeset = sets.ImmutableSet(('GLOBAL', 'DEFAULTMSGS', 'DEFAULT-REJECT',
-				    'DEFAULT-IPMAX', 'DEFAULT-CONNMAX'))
+	okeset = frozenset(('GLOBAL', 'DEFAULTMSGS', 'DEFAULT-REJECT',
+			    'DEFAULT-IPMAX', 'DEFAULT-CONNMAX'))
 	onlyRules = rrset.difference(arset)
 	onlyActions = arset.difference(rrset).difference(okeset)
 	rForDef = rrset.intersection(okeset)
