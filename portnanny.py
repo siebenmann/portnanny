@@ -1,4 +1,4 @@
-#!/usr/bin/python2
+#!/usr/bin/python
 #
 # The actual core, high-level logic of portnanny.
 # This is basically: process arguments, establish logging, read config

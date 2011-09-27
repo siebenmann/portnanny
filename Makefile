@@ -10,7 +10,7 @@ all:	group.so
 # (relatively) easy way. The arguments are painfully researched. We
 # must use the right python to invoke this; it should be the version
 # of python that the programs will run under.
-PYTHON=python2
+PYTHON=python
 group.so: group/group.c group/setup-group.py
 	$(PYTHON) group/setup-group.py build_ext -t . -i
 
