@@ -57,15 +57,15 @@ class socketTests(unittest.TestCase):
 	def testSockInfo(self):
 		"Test basic information obtained from a real socket."
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		# ssh to gpu should be good.
-		# okay, we'll go for hawkwind instead. don't look at me.
-		rip = "128.100.102.1"
-		rip = "128.100.102.51"
+		# Connect to sshd on localhost.
+		# TODO: somehow make a better test, which means getting
+		# a local listening socket.
+		rip = '127.0.0.1'
 		s.connect((rip, 22))
 		hi = hinfo.fromfd(s)
 		self.assertEqual(hi.getip(), rip)
 		self.assertEqual(hi.getport(), '22')
-		self.assertEqual(hi.getrevip(), "51.102.100.128")
+		self.assertEqual(hi.getrevip(), "1.0.0.127")
 		s.close()
 
 	# Fortunately we can provide a fake socket object that fails
