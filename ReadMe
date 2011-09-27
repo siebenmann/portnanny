@@ -46,7 +46,8 @@ change.
 on how portnanny is configured. In the process, it contains a
 writeup of how portnanny processes incoming connections.
  
- You may also want to see nanny.conf, nanny-rules, and nanny-actions.
+ You may also want to see nanny.conf, nanny-rules, and nanny-actions
+(all found in the example/ subdirectory).
 
  SECURITY
 
